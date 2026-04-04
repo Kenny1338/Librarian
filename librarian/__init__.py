@@ -5,11 +5,11 @@ fast LLM sidecar, and stores them in categorised memory banks.  Before each
 turn it assembles a context packet so the agent has instant recall.
 
 Works with **any agent framework** (OpenAI, LangChain, Claude, etc.) or standalone.
-Also ships as a native **Hermes Agent plugin**.
+Also works as a native **Hermes Agent plugin**.
 
 Quick start::
 
-    from hermes_librarian import Librarian
+    from librarian import Librarian
 
     lib = Librarian(api_key="gsk_...")
     lib.observe("I'm building a Rust compiler", "Cool! What stage?")
@@ -36,7 +36,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from hermes_librarian._compat import MemoryProvider
+from librarian._compat import MemoryProvider
 
 __all__ = [
     "Librarian",
@@ -651,7 +651,7 @@ class Librarian:
 
     Usage::
 
-        from hermes_librarian import Librarian
+        from librarian import Librarian
 
         lib = Librarian(api_key="gsk_...", store_path="./memory")
 

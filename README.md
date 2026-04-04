@@ -1,4 +1,4 @@
-# hermes-librarian
+# Librarian
 
 Persistent memory for AI agents. A fast LLM sidecar (Groq) silently observes conversation turns, extracts facts, commitments, and entities, and stores them in categorised memory banks — giving any agent instant recall across sessions.
 
@@ -13,7 +13,7 @@ The Librarian solves this by silently observing every turn and building a struct
 ## Install
 
 ```bash
-pip install hermes-librarian
+pip install librarian-ai
 ```
 
 You need a [Groq API key](https://console.groq.com/keys) (free tier available).
@@ -21,7 +21,7 @@ You need a [Groq API key](https://console.groq.com/keys) (free tier available).
 ## Quick Start
 
 ```python
-from hermes_librarian import Librarian
+from librarian import Librarian
 
 lib = Librarian(api_key="gsk_...")
 
@@ -47,7 +47,7 @@ That's it. Three methods: `observe()`, `summary()`, `recall()`.
 
 ```python
 import openai
-from hermes_librarian import Librarian
+from librarian import Librarian
 
 client = openai.OpenAI()
 lib = Librarian()
@@ -85,7 +85,7 @@ while True:
 
 ```python
 import anthropic
-from hermes_librarian import Librarian
+from librarian import Librarian
 
 client = anthropic.Anthropic()
 lib = Librarian()
@@ -107,7 +107,7 @@ lib.observe(user_input, response.content[0].text)
 ```python
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from hermes_librarian import Librarian
+from librarian import Librarian
 
 lib = Librarian()
 llm = ChatOpenAI(model="gpt-4o")
@@ -121,7 +121,7 @@ lib.observe("What's my name?", response.content)
 ### Plain Python (no framework)
 
 ```python
-from hermes_librarian import Librarian
+from librarian import Librarian
 
 lib = Librarian(store_path="./my-memory")
 
@@ -254,6 +254,12 @@ The plugin automatically hooks into Hermes's memory lifecycle (`sync_turn`, `pre
 git clone https://github.com/Kenny1338/Librarian
 cd Librarian
 pip install -e ".[dev]"
+```
+
+### From PyPI (once published)
+
+```bash
+pip install librarian-ai
 pytest
 ```
 
