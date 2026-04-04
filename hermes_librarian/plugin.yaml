@@ -1,0 +1,10 @@
+name: librarian
+version: 1.0.0
+description: "Librarian — real-time memory extraction via fast LLM sidecar (Groq). Categorizes facts into banks, tracks commitments, and assembles context-aware memory packets."
+pip_dependencies:
+  - groq
+requires_env:
+  - GROQ_API_KEY
+hooks:
+  - on_session_end
+  - on_pre_compress
