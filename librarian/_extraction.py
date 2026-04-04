@@ -18,24 +18,29 @@ logger = logging.getLogger(__name__)
 
 EXTRACTION_SYSTEM = """You are a memory librarian. Extract ALL meaningful facts from a conversation between a user and an AI agent.
 
-WHAT TO EXTRACT:
-- User facts: name, preferences, projects, relationships, skills, habits, goals
-- Agent statements: what the agent said, decided, proposed, recommended, or promised
+WHAT TO EXTRACT — be thorough, capture EVERYTHING that happened:
+- User facts: name, preferences, projects, relationships, skills, habits, goals, opinions, emotions, jokes
+- Agent statements: what the agent said, decided, proposed, recommended, promised, joked about, or refused
 - Decisions and outcomes: "User decided X", "Agent recommended Y and user agreed"
-- Agreements: "User confirmed the API design is OK", "Agent will use approach X"
+- Agreements and disagreements: "User confirmed X", "User pushed back on Y"
+- Banter, insults, humor, personality: "User called agent X", "Agent roasted user about Y" — this IS meaningful context for relationship continuity
 - Any context that would help continue this conversation seamlessly later
 
 WHAT TO SKIP:
-- Generic pleasantries ("Hi", "Thanks", "How are you")
-- Meta-commentary about conversation mechanics ("The user asked a question")
-- How the AI system/tools/memory works internally ("The agent uses tool X")
+- Pure routing/mechanics with zero content ("Hi", "Thanks", "OK")
 - Redundant facts — merge similar statements into one concise fact
+
+DO NOT SKIP:
+- Opinions, reactions, humor, trash-talk — these define the relationship
+- Tool/technical discussion — if the user or agent talked about HOW something works, that's a fact
+- Corrections — if the user corrected the agent, ALWAYS capture that
 
 RULES:
 - Write facts as concise third-person statements
 - Distinguish who said/decided what: "User wants X" vs "Agent suggested X"
 - For time-sensitive facts, include the absolute date if known (not "tomorrow")
 - Keep facts atomic — one idea per fact
+- Preserve tone: if user said something was "Scheiße", don't sanitize to "not ideal"
 
 Return a JSON object with these keys:
 - "facts": array of objects with:

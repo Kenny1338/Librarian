@@ -11,7 +11,7 @@ Quick start::
 
     from librarian import Librarian
 
-    lib = Librarian(api_key="***")
+    lib = Librarian(api_key="your-groq-key")
     lib.observe("I'm building a Rust compiler", "Cool! What stage?")
     print(lib.summary())          # markdown for your system prompt
     print(lib.recall("compiler")) # search stored facts
@@ -79,7 +79,7 @@ class Librarian:
 
         from librarian import Librarian
 
-        lib = Librarian(api_key="***", store_path="./memory")
+        lib = Librarian(api_key="your-groq-key", store_path="./memory")
 
         # after each conversation turn
         lib.observe("I'm building a Rust compiler", "Cool! What stage?")
@@ -100,6 +100,7 @@ class Librarian:
         api_key: str = "",
         model: str = "llama-3.3-70b-versatile",
         store_path: str | Path = "",
+        search_mode: str = "text",
     ):
         self._api_key = api_key or os.environ.get("GROQ_API_KEY", "")
         if not self._api_key:
@@ -109,7 +110,7 @@ class Librarian:
             )
         self._model = model
         store = Path(store_path) if store_path else Path.home() / ".librarian"
-        self._store = LibrarianStore(store)
+        self._store = LibrarianStore(store, search_mode=search_mode)
 
         # Queue-based worker for non-blocking observe()
         self._work_queue: queue.Queue = queue.Queue(maxsize=_QUEUE_MAX)

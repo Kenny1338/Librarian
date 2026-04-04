@@ -15,12 +15,19 @@ logger = logging.getLogger(__name__)
 
 
 class LibrarianStore:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, search_mode: str = "text"):
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "banks").mkdir(exist_ok=True)
         # Per-bank dedup indexes, loaded lazily
         self._dedup_indexes: Dict[str, DedupIndex] = {}
+
+        # Embedding search support
+        self._search_mode = search_mode  # "text" or "embedding"
+        self._embedding_index: Optional[Any] = None
+        if search_mode == "embedding":
+            from librarian._embeddings import EmbeddingIndex
+            self._embedding_index = EmbeddingIndex()
 
     # ------------------------------------------------------------------
     # Dedup index management
@@ -72,6 +79,13 @@ class LibrarianStore:
                 ttl = fact.get("ttl", DEFAULT_TEMPORAL_TTL)
                 expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
                 entry["expires_at"] = expires_at.isoformat()
+
+            # Compute and cache embedding if in embedding mode
+            if self._search_mode == "embedding" and self._embedding_index is not None:
+                try:
+                    entry["embedding"] = self._embedding_index.embed(fact["text"])
+                except Exception:
+                    pass  # graceful fallback — fact stored without embedding
 
             data["facts"].append(entry)
             self._write(bank_file, data)
@@ -156,10 +170,33 @@ class LibrarianStore:
         return [c for c in self.get_commitments() if c.get("status") == "active"]
 
     def search_facts(self, query: str, bank: Optional[str] = None, *, mark_expired: bool = True) -> List[Dict[str, Any]]:
-        q = query.lower()
-        words = [w for w in q.split() if len(w) > 2]
         facts = self.get_bank_facts(bank) if bank else self.get_all_facts()
         now = datetime.now(timezone.utc)
+
+        # Embedding-based search when available
+        if self._search_mode == "embedding" and self._embedding_index is not None:
+            try:
+                results = self._embedding_index.search(query, facts, top_k=20)
+            except Exception:
+                # Fall back to text search on any embedding error
+                results = self._text_search(query, facts)
+        else:
+            results = self._text_search(query, facts)
+
+        # Mark expired facts
+        if mark_expired:
+            for f in results:
+                if self._is_expired(f, now):
+                    if not f.get("text", "").startswith("[expired]"):
+                        f["text"] = "[expired] " + f.get("text", "")
+
+        return results
+
+    @staticmethod
+    def _text_search(query: str, facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Original text-based substring/word search."""
+        q = query.lower()
+        words = [w for w in q.split() if len(w) > 2]
         scored = []
         for f in facts:
             text = f.get("text", "").lower()
@@ -170,16 +207,7 @@ class LibrarianStore:
                 if word_hits > 0:
                     scored.append((word_hits, f))
         scored.sort(key=lambda x: -x[0])
-        results = [f for _, f in scored[:20]]
-
-        # Mark expired facts
-        if mark_expired:
-            for f in results:
-                if self._is_expired(f, now):
-                    if not f.get("text", "").startswith("[expired]"):
-                        f["text"] = "[expired] " + f.get("text", "")
-
-        return results
+        return [f for _, f in scored[:20]]
 
     def build_summary(self) -> str:
         now = datetime.now(timezone.utc)
