@@ -9,8 +9,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
-  <img src="https://img.shields.io/badge/python-3.11+-green" alt="Python 3.11+">
+  <a href="https://pypi.org/project/librarian-ai/"><img src="https://img.shields.io/pypi/v/librarian-ai?color=blue" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/librarian-ai/"><img src="https://img.shields.io/pypi/pyversions/librarian-ai" alt="Python versions"></a>
+  <a href="https://github.com/Kenny1338/Librarian/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
+  <a href="https://github.com/Kenny1338/Librarian/actions/workflows/ci.yml"><img src="https://github.com/Kenny1338/Librarian/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 A fast LLM sidecar (Groq) silently observes conversation turns, extracts facts, commitments, and entities, and stores them in categorised memory banks — giving any agent instant recall across sessions.
