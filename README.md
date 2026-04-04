@@ -54,7 +54,7 @@ print(lib.summary())
 results = lib.recall("compiler")
 ```
 
-That's it. Three methods: `observe()`, `summary()`, `recall()`.
+That's it. Three core methods: `observe()`, `summary()`, `recall()` — plus `forget()` when you need to erase.
 
 ## Integration Examples
 
@@ -173,13 +173,14 @@ User message ──► Agent responds ──► Librarian.observe() [async]
 
 ## API Reference
 
-### `Librarian(*, api_key="", model="llama-3.3-70b-versatile", store_path="")`
+### `Librarian(*, api_key=..., model="llama-3.3-70b-versatile", store_path="", search_mode="text")`
 
-Create a new Librarian instance.
+Create a new Librarian instance. All parameters are optional.
 
 - `api_key` — Groq API key. Falls back to `GROQ_API_KEY` env var.
 - `model` — Groq model for extraction. Default: `llama-3.3-70b-versatile`.
 - `store_path` — Where to store memory banks. Default: `~/.librarian`.
+- `search_mode` — `"text"` (default) or `"embedding"` for semantic search.
 
 ### `.observe(user_message, agent_response, *, blocking=False)`
 
@@ -213,6 +214,18 @@ Dispatch a tool call. Returns JSON string.
 
 Wait for any pending background extraction to complete.
 
+### `.forget(query) → int`
+
+Delete facts matching a search query. Returns the number of facts removed.
+
+### `.forget_bank(bank) → int`
+
+Delete an entire memory bank. Returns the number of facts removed.
+
+### `.forget_all() → int`
+
+Wipe all memory banks, commitments, and entities. Returns total items removed.
+
 ## Features
 
 - **Zero-config observation** — just call `observe()` after each turn
@@ -223,6 +236,28 @@ Wait for any pending background extraction to complete.
 - **Full conversation capture** — extracts both user and agent facts, decisions, agreements
 - **Model fallback** — tries `llama-3.3-70b-versatile`, falls back to `llama-3.1-8b-instant`
 - **Framework-agnostic tools** — OpenAI-compatible schemas for any agent framework
+- **Semantic search** — optional embedding-based recall via `sentence-transformers`
+- **TTL / expiry** — temporal facts auto-expire after 30 days
+- **Forget** — selective memory deletion (by query, bank, or full wipe)
+
+## Semantic Search
+
+By default, `recall()` uses fast text matching. For higher-quality results you can enable embedding-based semantic search powered by `sentence-transformers` (uses the `all-MiniLM-L6-v2` model, ~80 MB one-time download).
+
+```bash
+pip install 'librarian-ai[embeddings]'
+```
+
+```python
+from librarian import Librarian
+
+lib = Librarian(search_mode="embedding")
+
+# recall() now ranks results by cosine similarity
+results = lib.recall("what programming language is the user learning?")
+```
+
+Embeddings are computed once and cached inside each bank's JSON file, so subsequent searches are instant. Set `search_mode="text"` (the default) to skip the dependency entirely.
 
 ## Memory Banks
 

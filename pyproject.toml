@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "librarian-ai"
-version = "0.1.0"
+version = "0.2.0"
 description = "Persistent memory for AI agents. Observes conversations, extracts facts via Groq, and builds categorised memory banks. Works with any framework (OpenAI, LangChain, Claude, etc.)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{name = "Manu"}]
-keywords = ["memory", "llm", "groq", "ai-agent", "persistent-memory", "conversation", "recall"]
+keywords = ["memory", "llm", "groq", "ai-agent", "persistent-memory", "conversation", "recall", "forget", "embedding", "semantic-search"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -28,6 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+embeddings = ["sentence-transformers>=2.0"]
 
 [project.urls]
 Homepage = "https://github.com/Kenny1338/Librarian"
