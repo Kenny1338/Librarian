@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hermes-librarian"
 version = "0.1.0"
-description = "Librarian — real-time memory extraction plugin for Hermes Agent. Uses a fast LLM sidecar (Groq) to observe conversations, extract facts, and build persistent memory banks."
+description = "Persistent memory for AI agents. Observes conversations, extracts facts via Groq, and builds categorised memory banks. Works with any framework (OpenAI, LangChain, Claude, etc.)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -30,8 +30,8 @@ dependencies = [
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 
 [project.urls]
-Homepage = "https://github.com/manu/hermes-librarian"
-Issues = "https://github.com/manu/hermes-librarian/issues"
+Homepage = "https://github.com/Kenny1338/Librarian"
+Issues = "https://github.com/Kenny1338/Librarian/issues"
 
 [tool.setuptools.packages.find]
 include = ["hermes_librarian*"]

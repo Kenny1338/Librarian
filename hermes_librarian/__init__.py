@@ -1,25 +1,25 @@
-"""Librarian — real-time memory extraction via a fast LLM sidecar (Groq).
+"""Librarian — persistent memory for AI agents, powered by Groq.
 
-Watches every conversation turn, extracts facts / commitments / entities via
-a fast LLM, and categorises them into persistent memory banks.  Before each
-turn it assembles a contextual memory packet so the agent has instant recall.
+Observes conversation turns, extracts facts / commitments / entities via a
+fast LLM sidecar, and stores them in categorised memory banks.  Before each
+turn it assembles a context packet so the agent has instant recall.
 
-Works both as a **Hermes Agent plugin** and as a **standalone library**.
+Works with **any agent framework** (OpenAI, LangChain, Claude, etc.) or standalone.
+Also ships as a native **Hermes Agent plugin**.
 
-Standalone usage::
+Quick start::
 
-    from hermes_librarian import LibrarianMemoryProvider
+    from hermes_librarian import Librarian
 
-    lib = LibrarianMemoryProvider()
-    lib.initialize("my-session", hermes_home="/tmp/demo")
-    lib.sync_turn("I'm Manu, working on Second Brain", "Nice to meet you!")
-    print(lib.system_prompt_block())
+    lib = Librarian(api_key="gsk_...")
+    lib.observe("I'm building a Rust compiler", "Cool! What stage?")
+    print(lib.summary())          # markdown for your system prompt
+    print(lib.recall("compiler")) # search stored facts
 
 Environment variables::
 
     GROQ_API_KEY          — Groq API key (required)
     LIBRARIAN_MODEL       — Extraction model (default: llama-3.3-70b-versatile)
-    LIBRARIAN_BANK_DIR    — Override memory bank directory
 """
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ from typing import Any, Dict, List, Optional
 from hermes_librarian._compat import MemoryProvider
 
 __all__ = [
+    "Librarian",
     "LibrarianMemoryProvider",
     "LibrarianStore",
     "EXTRACTION_SYSTEM",
@@ -641,5 +642,154 @@ class LibrarianMemoryProvider(MemoryProvider):
             logger.info("[librarian] Shutdown. Banks: %s", stats)
 
 
+# ---------------------------------------------------------------------------
+# Framework-agnostic API
+# ---------------------------------------------------------------------------
+
+class Librarian:
+    """Simple, universal interface — works with any agent framework or none.
+
+    Usage::
+
+        from hermes_librarian import Librarian
+
+        lib = Librarian(api_key="gsk_...", store_path="./memory")
+
+        # after each conversation turn
+        lib.observe("I'm building a Rust compiler", "Cool! What stage?")
+
+        # before the next turn — get context for the system prompt
+        print(lib.summary())
+
+        # search for specific memories
+        results = lib.recall("compiler")
+
+        # get OpenAI-compatible tool schemas to expose to your agent
+        tools = lib.tool_schemas()
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str = "",
+        model: str = "llama-3.3-70b-versatile",
+        store_path: str | Path = "",
+    ):
+        self._api_key = api_key or os.environ.get("GROQ_API_KEY", "")
+        if not self._api_key:
+            raise ValueError(
+                "Groq API key required. Pass api_key= or set GROQ_API_KEY env var. "
+                "Get one at https://console.groq.com/keys"
+            )
+        self._model = model
+        store = Path(store_path) if store_path else Path.home() / ".librarian"
+        self._store = LibrarianStore(store)
+        self._sync_thread: Optional[threading.Thread] = None
+        logger.info("[librarian] Ready — store=%s, model=%s", store, model)
+
+    @property
+    def store(self) -> LibrarianStore:
+        """Direct access to the underlying memory store."""
+        return self._store
+
+    def observe(self, user_message: str, agent_response: str, *, blocking: bool = False) -> None:
+        """Extract and store facts from a conversation turn.
+
+        By default runs async in a background thread (non-blocking).
+        Set ``blocking=True`` to wait for extraction to complete.
+        """
+        def _run():
+            result = _extract_via_groq(self._api_key, self._model, user_message, agent_response)
+            if result["facts"]:
+                self._store.add_facts(result["facts"])
+            if result["commitments"]:
+                self._store.add_commitments(result["commitments"])
+            if result["entities"]:
+                self._store.add_entities(result["entities"])
+
+        if self._sync_thread and self._sync_thread.is_alive():
+            self._sync_thread.join(timeout=10.0)
+
+        if blocking:
+            _run()
+        else:
+            self._sync_thread = threading.Thread(target=_run, daemon=True, name="librarian-observe")
+            self._sync_thread.start()
+
+    def recall(self, query: str, *, bank: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
+        """Search memory banks for facts matching a query.
+
+        Returns a list of fact dicts sorted by relevance.
+        """
+        results = self._store.search_facts(query, bank=bank)
+        return results[:limit]
+
+    def summary(self) -> str:
+        """Build a markdown summary of all stored memories.
+
+        Suitable for injecting into a system prompt.
+        """
+        return self._store.build_summary()
+
+    def banks(self) -> Dict[str, int]:
+        """Return ``{bank_name: fact_count}`` for all memory banks."""
+        return self._store.get_banks()
+
+    def commitments(self, *, active_only: bool = True) -> List[Dict[str, Any]]:
+        """Return tracked commitments."""
+        if active_only:
+            return self._store.get_active_commitments()
+        return self._store.get_commitments()
+
+    def tool_schemas(self) -> List[Dict[str, Any]]:
+        """Return OpenAI-compatible function-calling tool schemas.
+
+        Plug these into any framework that supports OpenAI-style tools:
+        OpenAI SDK, LangChain, LlamaIndex, Anthropic, etc.
+        """
+        return [RECALL_SCHEMA, BANKS_SCHEMA, COMMITMENTS_SCHEMA]
+
+    def handle_tool_call(self, tool_name: str, args: Dict[str, Any]) -> str:
+        """Dispatch a tool call and return a JSON-string result.
+
+        Use with the schemas from :meth:`tool_schemas`.
+        """
+        if tool_name == "librarian_recall":
+            results = self.recall(args.get("query", ""), bank=args.get("bank"))
+            if not results:
+                return json.dumps({"result": f"No memories found for '{args.get('query', '')}'."})
+            lines = [f"[{f.get('bank', '?')}] {f.get('text', '')}" for f in results]
+            return json.dumps({"result": "\n".join(lines)})
+
+        elif tool_name == "librarian_banks":
+            bank = args.get("bank")
+            if bank:
+                facts = self._store.get_bank_facts(bank)
+                if not facts:
+                    return json.dumps({"result": f"Bank '{bank}' not found or empty."})
+                lines = [f"- {f.get('text', '')}" for f in facts]
+                return json.dumps({"result": f"Bank '{bank}' ({len(facts)} facts):\n" + "\n".join(lines)})
+            return json.dumps({"result": "\n".join(f"- {n}: {c} facts" for n, c in self.banks().items()) or "No banks yet."})
+
+        elif tool_name == "librarian_commitments":
+            cmts = self.commitments()
+            if not cmts:
+                return json.dumps({"result": "No active commitments."})
+            lines = [f"- [{c.get('type', 'task')}] {c.get('subject', '')}" for c in cmts]
+            return json.dumps({"result": "Active commitments:\n" + "\n".join(lines)})
+
+        return json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+    def flush(self) -> None:
+        """Wait for any pending background extraction to finish."""
+        if self._sync_thread and self._sync_thread.is_alive():
+            self._sync_thread.join(timeout=15.0)
+
+
+# ---------------------------------------------------------------------------
+# Hermes plugin registration hook
+# ---------------------------------------------------------------------------
+
 def register(ctx) -> None:
+    """Called by Hermes Agent plugin loader. Not needed for standalone use."""
     ctx.register_memory_provider(LibrarianMemoryProvider())

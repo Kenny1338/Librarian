@@ -1,15 +1,150 @@
 # hermes-librarian
 
-Real-time memory extraction plugin for [Hermes Agent](https://github.com/hermes-agent/hermes-agent). A fast LLM sidecar (Groq) observes every conversation turn, extracts facts, commitments, and entities, and persists them into categorised memory banks — giving your agent persistent recall across sessions.
+Persistent memory for AI agents. A fast LLM sidecar (Groq) silently observes conversation turns, extracts facts, commitments, and entities, and stores them in categorised memory banks — giving any agent instant recall across sessions.
+
+Works with **any framework** — OpenAI, LangChain, LlamaIndex, Anthropic Claude, or plain Python. Also ships as a native [Hermes Agent](https://github.com/hermes-agent/hermes-agent) plugin.
 
 ## The Problem
 
-LLM agents suffer from **cold-start amnesia**: every new session starts with zero context about the user. Stuffing entire conversation logs into the context window is expensive and noisy. RAG helps, but requires explicit indexing and doesn't capture implicit facts ("the user prefers dark mode").
+LLM agents suffer from cold-start amnesia: every new session starts with zero context. Stuffing full conversation logs into the prompt is expensive and noisy. RAG helps, but requires explicit indexing and misses implicit facts like "the user prefers dark mode".
+
+The Librarian solves this by silently observing every turn and building a structured memory that persists across sessions — no manual saving, no explicit commands.
+
+## Install
+
+```bash
+pip install hermes-librarian
+```
+
+You need a [Groq API key](https://console.groq.com/keys) (free tier available).
+
+## Quick Start
+
+```python
+from hermes_librarian import Librarian
+
+lib = Librarian(api_key="gsk_...")
+
+# after each conversation turn — extracts facts in the background
+lib.observe("I'm Manu, working on a Rust compiler", "Nice! What stage are you at?")
+
+# before the next turn — inject into your system prompt
+print(lib.summary())
+# ## What You Remember About The User
+# **projects** (1 facts):
+#   - User's name is Manu
+#   - User is building a Rust compiler
+
+# search for specific memories
+results = lib.recall("compiler")
+```
+
+That's it. Three methods: `observe()`, `summary()`, `recall()`.
+
+## Integration Examples
+
+### OpenAI SDK
+
+```python
+import openai
+from hermes_librarian import Librarian
+
+client = openai.OpenAI()
+lib = Librarian()
+
+messages = [{"role": "system", "content": f"You are a helpful assistant.\n\n{lib.summary()}"}]
+
+while True:
+    user_input = input("> ")
+    messages.append({"role": "user", "content": user_input})
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+        tools=[{"type": "function", "function": t} for t in lib.tool_schemas()],
+    )
+
+    assistant_msg = response.choices[0].message
+
+    # handle tool calls
+    if assistant_msg.tool_calls:
+        for tc in assistant_msg.tool_calls:
+            result = lib.handle_tool_call(tc.function.name, json.loads(tc.function.arguments))
+            messages.append({"role": "tool", "content": result, "tool_call_id": tc.id})
+        continue
+
+    reply = assistant_msg.content
+    messages.append({"role": "assistant", "content": reply})
+    print(reply)
+
+    # observe the turn — extraction happens in background
+    lib.observe(user_input, reply)
+```
+
+### Anthropic Claude
+
+```python
+import anthropic
+from hermes_librarian import Librarian
+
+client = anthropic.Anthropic()
+lib = Librarian()
+
+response = client.messages.create(
+    model="claude-sonnet-4-20250514",
+    system=f"You are a helpful assistant.\n\n{lib.summary()}",
+    messages=[{"role": "user", "content": user_input}],
+    tools=[{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
+           for t in lib.tool_schemas()],
+)
+
+# after the turn
+lib.observe(user_input, response.content[0].text)
+```
+
+### LangChain
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+from hermes_librarian import Librarian
+
+lib = Librarian()
+llm = ChatOpenAI(model="gpt-4o")
+
+messages = [SystemMessage(content=lib.summary()), HumanMessage(content="What's my name?")]
+response = llm.invoke(messages)
+
+lib.observe("What's my name?", response.content)
+```
+
+### Plain Python (no framework)
+
+```python
+from hermes_librarian import Librarian
+
+lib = Librarian(store_path="./my-memory")
+
+# manually feed conversation data
+lib.observe("My meeting with Lisa is tomorrow at 10", "Got it, I'll remind you!")
+lib.observe("I prefer dark mode in all apps", "Noted!")
+
+lib.flush()  # wait for background extraction
+
+print(lib.banks())
+# {'general': 1, 'preferences': 1, 'people': 1}
+
+print(lib.recall("Lisa"))
+# [{'text': 'User has a meeting with Lisa on 2026-04-04 at 10:00', 'bank': 'people', ...}]
+
+print(lib.commitments())
+# [{'type': 'reminder', 'subject': 'Meeting with Lisa', 'due': '2026-04-04T10:00', ...}]
+```
 
 ## How It Works
 
 ```
-User message ──► Agent responds ──► Librarian observes (async)
+User message ──► Agent responds ──► Librarian.observe() [async]
                                          │
                                     Groq LLM extracts:
                                     ├─ facts (categorised into banks)
@@ -18,156 +153,106 @@ User message ──► Agent responds ──► Librarian observes (async)
                                          │
                                     Dedup & persist to JSON
                                          │
-                                    Next turn: inject as context
+                                    Next turn: summary() / recall()
 ```
 
-**Two-phase context injection:**
+## API Reference
 
-1. **System prompt block** — overview of all stored facts (max 8 per bank)
-2. **Prefetch** — keyword-matched facts relevant to the current query
+### `Librarian(*, api_key="", model="llama-3.3-70b-versatile", store_path="")`
 
-The agent never has to explicitly "remember" — the Librarian handles it silently.
+Create a new Librarian instance.
+
+- `api_key` — Groq API key. Falls back to `GROQ_API_KEY` env var.
+- `model` — Groq model for extraction. Default: `llama-3.3-70b-versatile`.
+- `store_path` — Where to store memory banks. Default: `~/.librarian`.
+
+### `.observe(user_message, agent_response, *, blocking=False)`
+
+Extract facts from a conversation turn. Runs async by default.
+
+### `.recall(query, *, bank=None, limit=20) → list[dict]`
+
+Search memory banks. Returns facts sorted by relevance.
+
+### `.summary() → str`
+
+Markdown summary of all memories — ready for system prompt injection.
+
+### `.banks() → dict[str, int]`
+
+Bank names and fact counts.
+
+### `.commitments(*, active_only=True) → list[dict]`
+
+Tracked commitments (tasks, promises, reminders).
+
+### `.tool_schemas() → list[dict]`
+
+OpenAI-compatible function-calling schemas. Works with OpenAI, Anthropic, LangChain, LlamaIndex, etc.
+
+### `.handle_tool_call(tool_name, args) → str`
+
+Dispatch a tool call. Returns JSON string.
+
+### `.flush()`
+
+Wait for any pending background extraction to complete.
 
 ## Features
 
-- **Async extraction** — runs in background threads, zero latency impact on the agent
-- **Deduplication** — `SequenceMatcher`-based similarity check (0.75 threshold) prevents redundant facts
-- **Durability tags** — facts are tagged `permanent` (name, preference) or `temporal` (meeting, deadline)
-- **Bank categorisation** — `general`, `people`, `work`, `health`, `projects`, `preferences`, `decisions`
-- **Agent + user facts** — captures what both sides said, decided, and agreed on
-- **Pre-compression hook** — extracts facts from messages before Hermes compresses them away
-- **Tool exposure** — `librarian_recall`, `librarian_banks`, `librarian_commitments` for agent self-service
+- **Zero-config observation** — just call `observe()` after each turn
+- **Async extraction** — background threads, no latency impact
+- **Deduplication** — similarity-based (0.75 threshold) prevents redundant facts
+- **Durability tags** — `permanent` (name, preference) vs `temporal` (meeting, deadline)
+- **Bank categorisation** — general, people, work, health, projects, preferences, decisions
+- **Full conversation capture** — extracts both user and agent facts, decisions, agreements
 - **Model fallback** — tries `llama-3.3-70b-versatile`, falls back to `llama-3.1-8b-instant`
+- **Framework-agnostic tools** — OpenAI-compatible schemas for any agent framework
 
-## Installation
+## Memory Banks
 
-### As a Hermes plugin
+Stored as simple JSON files:
 
-```bash
-pip install hermes-librarian
+```
+~/.librarian/
+├── banks/
+│   ├── general.json
+│   ├── people.json
+│   ├── projects.json
+│   └── preferences.json
+├── commitments.json
+└── entities.json
 ```
 
-Then set the memory provider in `~/.hermes/config.yaml`:
+## Hermes Agent Plugin
+
+If you use [Hermes Agent](https://github.com/hermes-agent/hermes-agent), the Librarian also works as a native memory plugin:
 
 ```yaml
+# ~/.hermes/config.yaml
 memory:
   provider: librarian
 ```
 
-And add your Groq API key to `~/.hermes/.env`:
-
 ```bash
+# ~/.hermes/.env
 GROQ_API_KEY=gsk_...
 ```
 
-### As a standalone library
-
-```bash
-pip install hermes-librarian
-```
-
-```python
-from hermes_librarian import LibrarianMemoryProvider
-
-lib = LibrarianMemoryProvider()
-lib.initialize("session-1", hermes_home="/path/to/storage")
-
-# After a conversation turn
-lib.sync_turn(
-    "I'm working on a Rust compiler project",
-    "That sounds interesting! What stage are you at?"
-)
-
-# On the next turn, get context
-lib.queue_prefetch("How's my compiler going?")
-context = lib.prefetch("How's my compiler going?")
-prompt_block = lib.system_prompt_block()
-```
-
-### From source
-
-```bash
-git clone https://github.com/manu/hermes-librarian
-cd hermes-librarian
-pip install -e ".[dev]"
-```
+The plugin automatically hooks into Hermes's memory lifecycle (`sync_turn`, `prefetch`, `system_prompt_block`, `on_pre_compress`).
 
 ## Configuration
 
 | Environment Variable | Default | Description |
 |---|---|---|
-| `GROQ_API_KEY` | *(required)* | Groq API key ([get one here](https://console.groq.com/keys)) |
-| `LIBRARIAN_MODEL` | `llama-3.3-70b-versatile` | Groq model for extraction |
-| `LIBRARIAN_BANK_DIR` | `$HERMES_HOME/librarian` | Override storage directory |
-
-## Memory Banks
-
-Facts are categorised into banks stored as individual JSON files:
-
-```
-~/.hermes/librarian/
-├── banks/
-│   ├── general.json
-│   ├── people.json
-│   ├── work.json
-│   ├── health.json
-│   ├── projects.json
-│   ├── preferences.json
-│   └── decisions.json
-├── commitments.json
-└── entities.json
-```
-
-Each fact includes:
-
-```json
-{
-  "text": "User's name is Manu",
-  "confidence": "stated",
-  "durability": "permanent",
-  "added": "2026-04-03T14:30:00+00:00"
-}
-```
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────┐
-│                  Hermes Agent                     │
-│                                                   │
-│  system prompt ◄── system_prompt_block()          │
-│  turn context  ◄── prefetch()                     │
-│                                                   │
-│  after turn ───► sync_turn() ──► background thread│
-│                                      │            │
-│                                 Groq API call     │
-│                                      │            │
-│                                 LibrarianStore    │
-│                                 ├── add_facts()   │
-│                                 ├── add_commits() │
-│                                 └── dedup check   │
-│                                                   │
-│  tools: librarian_recall, librarian_banks,        │
-│         librarian_commitments                     │
-└──────────────────────────────────────────────────┘
-```
-
-## Extraction Prompt
-
-The Librarian extracts:
-
-- **User facts** — name, preferences, projects, relationships, skills, habits, goals
-- **Agent statements** — what the agent said, decided, proposed, recommended, or promised
-- **Decisions and outcomes** — "User decided X", "Agent recommended Y and user agreed"
-- **Agreements** — "User confirmed the API design is OK"
-- **Commitments** — tasks, promises, reminders with optional due dates
-- **Entities** — people, organisations, places mentioned
-
-It explicitly skips pleasantries, meta-commentary about conversation mechanics, and internal system details.
+| `GROQ_API_KEY` | *(required)* | [Groq API key](https://console.groq.com/keys) |
+| `LIBRARIAN_MODEL` | `llama-3.3-70b-versatile` | Extraction model |
 
 ## Development
 
 ```bash
+git clone https://github.com/Kenny1338/Librarian
+cd Librarian
 pip install -e ".[dev]"
 pytest
 ```
