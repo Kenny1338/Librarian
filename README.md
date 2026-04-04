@@ -1,6 +1,20 @@
-# Librarian
+<p align="center">
+  <img src="logo.jpg" alt="Librarian" width="200">
+</p>
 
-Persistent memory for AI agents. A fast LLM sidecar (Groq) silently observes conversation turns, extracts facts, commitments, and entities, and stores them in categorised memory banks — giving any agent instant recall across sessions.
+<h1 align="center">Librarian</h1>
+
+<p align="center">
+  <strong>Persistent memory for AI agents</strong>
+</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/librarian-ai"><img src="https://img.shields.io/pypi/v/librarian-ai" alt="PyPI"></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+  <img src="https://img.shields.io/pypi/pyversions/librarian-ai" alt="Python 3.11+">
+</p>
+
+A fast LLM sidecar (Groq) silently observes conversation turns, extracts facts, commitments, and entities, and stores them in categorised memory banks — giving any agent instant recall across sessions.
 
 Works with **any framework** — OpenAI, LangChain, LlamaIndex, Anthropic Claude, or plain Python. Also ships as a native [Hermes Agent](https://github.com/hermes-agent/hermes-agent) plugin.
 
