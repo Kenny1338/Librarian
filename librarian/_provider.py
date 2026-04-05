@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from librarian._compat import MemoryProvider
-from librarian._extraction import _extract_via_groq
+from librarian._extraction import _call_groq, EXTRACTION_SYSTEM, EXTRACTION_USER
+from datetime import datetime, timezone
 from librarian._store import LibrarianStore
 from librarian._tools import RECALL_SCHEMA, BANKS_SCHEMA, COMMITMENTS_SCHEMA
 
@@ -202,7 +203,11 @@ class LibrarianMemoryProvider(MemoryProvider):
         def _sync():
             start = time.monotonic()
             try:
-                result = _extract_via_groq(api_key, model, user_content, assistant_content)
+                result = _call_groq(api_key, model, EXTRACTION_SYSTEM, EXTRACTION_USER.format(
+                    today=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                    user_message=user_content,
+                    agent_response=assistant_content,
+                ))
 
                 added_facts = 0
                 added_cmts = 0
@@ -267,7 +272,11 @@ class LibrarianMemoryProvider(MemoryProvider):
             combined_agent = " | ".join(agent_texts[-3:])
             logger.info("[librarian] Pre-compress extraction from %d messages", len(messages))
             try:
-                result = _extract_via_groq(self._api_key, self._model, combined_user, combined_agent)
+                result = _call_groq(self._api_key, self._model, EXTRACTION_SYSTEM, EXTRACTION_USER.format(
+                    today=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                    user_message=combined_user,
+                    agent_response=combined_agent,
+                ))
                 if result["facts"]:
                     added = self._store.add_facts(result["facts"])
                     return f"Librarian extracted {added} new facts before compression."

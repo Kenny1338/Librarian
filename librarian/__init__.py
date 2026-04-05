@@ -24,7 +24,7 @@ Environment variables::
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 import json
 import logging
@@ -48,7 +48,7 @@ from librarian._tools import (
 from librarian._extraction import (
     EXTRACTION_SYSTEM,
     EXTRACTION_USER,
-    _extract_via_groq,
+    _call_groq,
 )
 from librarian._dedup import _is_duplicate, DedupIndex
 from librarian._store import LibrarianStore
@@ -163,7 +163,11 @@ class Librarian:
         Set ``blocking=True`` to wait for extraction to complete.
         """
         def _run():
-            result = _extract_via_groq(self._api_key, self._model, user_message, agent_response)
+            result = _call_groq(self._api_key, self._model, EXTRACTION_SYSTEM, EXTRACTION_USER.format(
+                today=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                user_message=user_message,
+                agent_response=agent_response,
+            ))
             if result["facts"]:
                 self._store.add_facts(result["facts"])
             if result["commitments"]:

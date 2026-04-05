@@ -1,26 +1,20 @@
-"""Optimized deduplication with two-tier approach: hash + trigram similarity.
+"""Deduplication engine: MD5 hash + trigram Jaccard similarity.
 
-Replaces the old O(n^2) SequenceMatcher approach with:
+Two-tier approach:
   1. Normalized text hash for exact/near-exact matches — O(1)
-  2. Trigram similarity only for hash bucket collisions — rare
-  
-Average case is O(1) for 1000+ facts per bank.
+  2. Trigram similarity for coarse-hash bucket collisions — rare
+
+Average case is O(1) even with 1000+ facts per bank.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
-import logging
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Set
 
-from librarian._tools import DEDUP_THRESHOLD
-
-logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Normalization + trigram helpers
-# ---------------------------------------------------------------------------
+# Similarity threshold for deduplication (0.0 = no match, 1.0 = identical)
+DEDUP_THRESHOLD = 0.75
 
 _STRIP_RE = re.compile(r"[^a-z0-9 ]")
 
@@ -62,22 +56,16 @@ def _trigram_similarity(a: str, b: str) -> float:
     return intersection / union if union else 0.0
 
 
-# ---------------------------------------------------------------------------
-# Dedup Index — loaded once per bank, updated incrementally
-# ---------------------------------------------------------------------------
-
 class DedupIndex:
     """In-memory dedup index for a set of texts.
-    
+
     Two-tier approach:
-      - Tier 1: exact normalized hash → O(1) lookup
-      - Tier 2: coarse (sorted-word) hash → bucket of texts for trigram check
+      - Tier 1: exact normalized hash -> O(1) lookup
+      - Tier 2: coarse (sorted-word) hash -> bucket of texts for trigram check
     """
 
-    def __init__(self):
-        # exact normalized hashes
+    def __init__(self) -> None:
         self._exact_hashes: Set[str] = set()
-        # coarse hash → list of original texts in that bucket
         self._coarse_buckets: Dict[str, List[str]] = {}
 
     def load(self, texts: List[str]) -> None:
@@ -99,22 +87,14 @@ class DedupIndex:
         # Tier 1: exact hash
         eh = _norm_hash(new_text)
         if eh in self._exact_hashes:
-            logger.debug("[librarian] Dedup exact hash hit: %.50s", new_text)
             return True
-
-        # Tier 2: coarse hash bucket → trigram check
+        # Tier 2: coarse hash bucket -> trigram check
         ch = _coarse_hash(new_text)
         bucket = self._coarse_buckets.get(ch)
         if bucket:
             for existing in bucket:
-                sim = _trigram_similarity(new_text, existing)
-                if sim >= threshold:
-                    logger.debug(
-                        "[librarian] Dedup trigram hit: '%.50s' ~ '%.50s' (%.2f >= %.2f)",
-                        new_text, existing, sim, threshold,
-                    )
+                if _trigram_similarity(new_text, existing) >= threshold:
                     return True
-
         return False
 
     def add(self, text: str) -> None:
@@ -126,12 +106,8 @@ class DedupIndex:
         return len(self._exact_hashes)
 
 
-# ---------------------------------------------------------------------------
-# Module-level convenience (backward compat)
-# ---------------------------------------------------------------------------
-
 def _is_duplicate(new_text: str, existing_texts: List[str], threshold: float = DEDUP_THRESHOLD) -> bool:
-    """Legacy API — builds a temporary index. Use DedupIndex for hot paths."""
+    """Convenience function — builds a temporary index."""
     idx = DedupIndex()
     idx.load(existing_texts)
     return idx.is_duplicate(new_text, threshold)

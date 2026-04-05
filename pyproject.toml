@@ -23,12 +23,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "groq>=0.11.0,<1",
+    "groq>=0.11.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 embeddings = ["sentence-transformers>=2.0"]
+mcp = ["mcp>=1.0"]
 
 [project.urls]
 Homepage = "https://github.com/Kenny1338/Librarian"
